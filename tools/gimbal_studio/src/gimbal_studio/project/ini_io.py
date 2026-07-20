@@ -99,6 +99,17 @@ def _group_header(total_slots: int) -> str:
     return f"{{ NUM {columns}}}"
 
 
+def _header_slot_count(header: str) -> int:
+    return len(re.findall(r"S\d{2}", header))
+
+
+def _resolve_group_header(project: Project, total_slots: int) -> str:
+    loaded = project.meta.get("_group_header")
+    if loaded is not None and _header_slot_count(loaded) == total_slots:
+        return loaded
+    return _group_header(total_slots)
+
+
 def _total_slots(project: Project) -> int:
     ids = [steer.id for steer in project.steers if steer.enable]
     ids.extend(servo_id for group in project.groups for servo_id, _, _ in group.moves)
@@ -116,7 +127,7 @@ def save_ini(project: Project, path: Path) -> None:
 
     total_slots = _total_slots(project)
     group_items: list[tuple[str, object]] = [
-        ("GROUP", project.meta.get("_group_header", _group_header(total_slots)))
+        ("GROUP", _resolve_group_header(project, total_slots))
     ]
     for group in sorted(project.groups, key=lambda item: item.index):
         line = format_group_line(group.index, group.moves, total_slots)

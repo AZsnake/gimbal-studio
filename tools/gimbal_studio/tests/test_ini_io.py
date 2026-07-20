@@ -35,6 +35,18 @@ def test_roundtrip_preserves_unknown_section(tmp_path):
     assert reloaded.groups[1].moves[0] == (0, 1100, 1800)
 
 
+def test_save_syncs_group_header_with_slot_count(tmp_path):
+    project = load_ini(FIXTURE)
+    assert "S31" not in project.meta["_group_header"]
+
+    out = tmp_path / "out.ini"
+    save_ini(project, out)
+
+    text = out.read_text(encoding="utf-8")
+    assert "------S31------" in text
+    assert "#031P0000T0000!" in text
+
+
 def test_group_command_builds_multi_servo_command():
     group = ActionGroup(index=3, moves=[(0, 1100, 1800), (1, 1500, 1800)])
 
