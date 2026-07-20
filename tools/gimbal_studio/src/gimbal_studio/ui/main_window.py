@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from pathlib import Path
+
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -13,9 +16,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gimbal_studio.project.ini_io import load_ini, save_ini
 from gimbal_studio.project.models import Project, SteerChannel
 from gimbal_studio.serial_io.port import SerialLink, SerialLinkError, list_ports
 from gimbal_studio.ui.control_page import ControlPage
+from gimbal_studio.ui.groups_page import GroupsPage
 from gimbal_studio.ui.log_page import LogPage
 
 
@@ -25,12 +30,35 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Gimbal Studio")
         self.resize(1100, 720)
 
+        self.project = self._default_project()
+        self.current_path: Path | None = None
         self.serial_link = SerialLink(self)
         self._build_ui()
         self._connect_signals()
         self.refresh_ports()
 
+    @staticmethod
+    def _default_project() -> Project:
+        return Project(
+            steers=[
+                SteerChannel(
+                    title="水平", id=0, pmin=500, pmax=2500, enable=True
+                ),
+                SteerChannel(
+                    title="倾斜", id=1, pmin=500, pmax=2500, enable=True
+                ),
+            ]
+        )
+
     def _build_ui(self) -> None:
+        file_menu = self.menuBar().addMenu("文件")
+        self.open_action = QAction("打开…", self)
+        self.save_action = QAction("保存", self)
+        self.save_as_action = QAction("另存为…", self)
+        file_menu.addAction(self.open_action)
+        file_menu.addAction(self.save_action)
+        file_menu.addAction(self.save_as_action)
+
         root = QWidget()
         root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -68,23 +96,16 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.control_page = ControlPage(self.serial_link)
-        self.control_page.set_project(
-            Project(
-                steers=[
-                    SteerChannel(
-                        title="水平", id=0, pmin=500, pmax=2500, enable=True
-                    ),
-                    SteerChannel(
-                        title="倾斜", id=1, pmin=500, pmax=2500, enable=True
-                    ),
-                ]
-            )
+        self.groups_page = GroupsPage(self.serial_link)
+        self.control_page.set_project(self.project)
+        self.groups_page.set_project(self.project)
+        self.groups_page.set_current_pose(
+            self.control_page.current_pose(),
+            self.control_page.time_spin.value(),
         )
-        groups_placeholder = QLabel("动作组页面将在 Task 8 实现")
-        groups_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.log_page = LogPage()
         self.tabs.addTab(self.control_page, "控制")
-        self.tabs.addTab(groups_placeholder, "动作组")
+        self.tabs.addTab(self.groups_page, "动作组")
         self.tabs.addTab(self.log_page, "串口日志")
 
         root_layout.addWidget(top_bar)
@@ -94,10 +115,84 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self.refresh_ports)
         self.connect_button.clicked.connect(self._toggle_connection)
+        self.open_action.triggered.connect(self.open_project)
+        self.save_action.triggered.connect(self.save_project)
+        self.save_as_action.triggered.connect(self.save_project_as)
         self.log_page.submit_command.connect(self._send_command)
+        self.groups_page.pose_requested.connect(self.control_page.apply_pose)
+        self.control_page.pose_changed.connect(
+            lambda pose: self.groups_page.set_current_pose(
+                pose,
+                self.control_page.time_spin.value(),
+            )
+        )
+        self.control_page.time_spin.valueChanged.connect(
+            lambda time_ms: self.groups_page.set_current_pose(
+                self.control_page.current_pose(),
+                time_ms,
+            )
+        )
         self.serial_link.received.connect(self.log_page.append_received)
         self.serial_link.connection_changed.connect(self._set_connected)
         self.serial_link.error_occurred.connect(self.log_page.append_error)
+
+    def set_project(self, project: Project, path: Path | None = None) -> None:
+        self.groups_page.runner.cancel()
+        self.project = project
+        self.current_path = path
+        self.control_page.set_project(project)
+        self.groups_page.set_project(project)
+        self.groups_page.set_current_pose(
+            self.control_page.current_pose(),
+            self.control_page.time_spin.value(),
+        )
+        self._update_title()
+
+    def _update_title(self) -> None:
+        suffix = f" — {self.current_path.name}" if self.current_path else ""
+        self.setWindowTitle(f"Gimbal Studio{suffix}")
+
+    def open_project(self) -> None:
+        filename, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "打开工程",
+            str(self.current_path.parent if self.current_path else Path.cwd()),
+            "INI 工程 (*.ini);;所有文件 (*)",
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        try:
+            project = load_ini(path)
+        except (OSError, UnicodeError, ValueError) as exc:
+            self.log_page.append_error(f"打开工程失败: {exc}")
+            return
+        self.set_project(project, path)
+
+    def save_project(self) -> None:
+        if self.current_path is None:
+            self.save_project_as()
+            return
+        self._save_to(self.current_path)
+
+    def save_project_as(self) -> None:
+        filename, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "保存工程",
+            str(self.current_path or Path.cwd() / "config_bes.ini"),
+            "INI 工程 (*.ini);;所有文件 (*)",
+        )
+        if filename:
+            self._save_to(Path(filename))
+
+    def _save_to(self, path: Path) -> None:
+        try:
+            save_ini(self.project, path)
+        except OSError as exc:
+            self.log_page.append_error(f"保存工程失败: {exc}")
+            return
+        self.current_path = path
+        self._update_title()
 
     def refresh_ports(self) -> None:
         selected = self.port_combo.currentText()
@@ -142,5 +237,6 @@ class MainWindow(QMainWindow):
             self.connect_button.setEnabled(bool(self.port_combo.count()))
 
     def closeEvent(self, event) -> None:
+        self.groups_page.runner.cancel()
         self.serial_link.disconnect()
         super().closeEvent(event)

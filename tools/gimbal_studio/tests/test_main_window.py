@@ -1,9 +1,11 @@
 from importlib.resources import files
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
 
 APP = QApplication.instance() or QApplication([])
+FIXTURE = Path(__file__).parent / "fixtures" / "minimal_bes.ini"
 
 
 def test_theme_qss_is_package_resource():
@@ -100,5 +102,43 @@ def test_send_failure_logs_error_once(monkeypatch):
     log_text = window.log_page.log_output.toPlainText()
     assert log_text.count("write failed") == 1
     assert "TX  PING" not in log_text
+
+    window.close()
+
+
+def test_open_and_save_actions_share_project_between_pages(monkeypatch, tmp_path):
+    import gimbal_studio.ui.main_window as main_window_module
+
+    saved_path = tmp_path / "saved.ini"
+    monkeypatch.setattr(main_window_module, "list_ports", lambda: [])
+    monkeypatch.setattr(
+        main_window_module.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(FIXTURE), "INI 工程 (*.ini)"),
+    )
+    monkeypatch.setattr(
+        main_window_module.QFileDialog,
+        "getSaveFileName",
+        lambda *args, **kwargs: (str(saved_path), "INI 工程 (*.ini)"),
+    )
+    window = main_window_module.MainWindow()
+
+    window.open_action.trigger()
+
+    assert window.control_page.project is window.project
+    assert window.groups_page.project is window.project
+    assert window.groups_page.table.rowCount() == 2
+    assert window.current_path == FIXTURE
+
+    window.control_page.time_spin.setValue(700)
+    window.groups_page.add_button.click()
+    assert {move[2] for move in window.project.groups[-1].moves} == {700}
+
+    window.project.groups[0].moves[0] = (0, 1234, 500)
+    window.save_as_action.trigger()
+
+    assert saved_path.exists()
+    assert "#000P1234T0500!" in saved_path.read_text(encoding="utf-8")
+    assert window.current_path == saved_path
 
     window.close()
