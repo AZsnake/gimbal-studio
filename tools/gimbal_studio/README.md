@@ -93,8 +93,10 @@ python scripts/pack.py
 ```
 
 脚本使用当前 Python 环境生成 one-folder、无控制台窗口的应用，输出目录为
-`dist/GimbalStudio/`。打包产物与操作系统相关，应分别在目标平台打包；Windows
-入口通常为 `dist/GimbalStudio/GimbalStudio.exe`。
+`dist/GimbalStudio/`。PyInstaller 会通过 `--collect-data gimbal_studio` 收集
+包内资源（含 `resources/theme.qss`），避免 frozen 应用启动时找不到主题。
+打包产物与操作系统相关，应分别在目标平台打包；Windows 入口通常为
+`dist/GimbalStudio/GimbalStudio.exe`。
 
 ## 手动验收清单
 
