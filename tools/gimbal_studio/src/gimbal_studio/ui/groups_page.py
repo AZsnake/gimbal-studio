@@ -26,6 +26,7 @@ _DEFAULT_INTER_FRAME_MS = 300
 
 class GroupsPage(QWidget):
     pose_requested = Signal(object)
+    actions_need_update = Signal()
 
     def __init__(self, link: TextLink, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -147,6 +148,7 @@ class GroupsPage(QWidget):
         self.end_spin.setRange(0, maximum)
         self.end_spin.setValue(maximum)
         self._update_run_buttons()
+        self.actions_need_update.emit()
 
     def _selected_row(self) -> int | None:
         row = self.table.currentRow()
@@ -218,14 +220,9 @@ class GroupsPage(QWidget):
         return self.start_spin.value() <= self.end_spin.value()
 
     def _update_run_buttons(self) -> None:
-        enabled = bool(self.project.groups) and self._is_range_valid()
-        for button in (
-            self.online_button,
-            self.offline_button,
-            self.download_button,
-            self.set_boot_button,
-        ):
-            button.setEnabled(enabled)
+        self.set_boot_button.setEnabled(
+            bool(self.project.groups) and self._is_range_valid()
+        )
 
     def _ensure_valid_range(self) -> bool:
         if self._is_range_valid():

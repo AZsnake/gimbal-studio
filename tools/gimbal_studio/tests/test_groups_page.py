@@ -108,6 +108,10 @@ def test_sequence_and_boot_buttons_dispatch_expected_commands(
     page.start_spin.setValue(0)
     page.end_spin.setValue(1)
     page.count_spin.setValue(3)
+    page.online_button.setEnabled(True)
+    page.offline_button.setEnabled(True)
+    page.download_button.setEnabled(True)
+    page.set_boot_button.setEnabled(True)
 
     page.online_button.click()
     page.offline_button.click()
@@ -159,10 +163,11 @@ def test_invalid_range_blocks_sequence_and_boot_actions(
         lambda _parent, _title, message: warnings.append(message),
     )
 
-    assert not page.online_button.isEnabled()
-    assert not page.offline_button.isEnabled()
-    assert not page.download_button.isEnabled()
     assert not page.set_boot_button.isEnabled()
+
+    page.online_button.setEnabled(True)
+    page.offline_button.setEnabled(True)
+    page.download_button.setEnabled(True)
 
     page._run_online()
     page._run_offline()
@@ -192,6 +197,7 @@ def test_download_uses_time_download_from_project_meta(
     )
     page.start_spin.setValue(0)
     page.end_spin.setValue(1)
+    page.download_button.setEnabled(True)
 
     page.download_button.click()
 

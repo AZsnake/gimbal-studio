@@ -133,6 +133,30 @@ def test_connection_state_controls_sequence_actions(monkeypatch):
     window.close()
 
 
+def test_add_group_while_disconnected_keeps_sequence_actions_disabled(
+    monkeypatch,
+) -> None:
+    import gimbal_studio.ui.main_window as main_window_module
+
+    monkeypatch.setattr(main_window_module, "list_ports", lambda: ["COM3"])
+    window = main_window_module.MainWindow()
+
+    assert not window.serial_link.is_connected
+    assert not window.project.groups
+    assert not window.groups_page.online_button.isEnabled()
+    assert not window.groups_page.offline_button.isEnabled()
+    assert not window.groups_page.download_button.isEnabled()
+
+    window.groups_page.add_button.click()
+
+    assert window.project.groups
+    assert not window.groups_page.online_button.isEnabled()
+    assert not window.groups_page.offline_button.isEnabled()
+    assert not window.groups_page.download_button.isEnabled()
+
+    window.close()
+
+
 def test_connection_failure_shows_message_box(monkeypatch):
     import gimbal_studio.ui.main_window as main_window_module
 

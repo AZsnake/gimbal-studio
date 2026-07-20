@@ -140,6 +140,7 @@ class MainWindow(QMainWindow):
         self.groups_page.end_spin.valueChanged.connect(
             lambda: self._update_sequence_actions()
         )
+        self.groups_page.actions_need_update.connect(self._update_sequence_actions)
         self.serial_link.received.connect(self.log_page.append_received)
         self.serial_link.connection_changed.connect(self._set_connected)
         self.serial_link.error_occurred.connect(self.log_page.append_error)
