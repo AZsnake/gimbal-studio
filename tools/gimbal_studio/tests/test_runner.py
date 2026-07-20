@@ -98,6 +98,23 @@ def test_download_starts_at_requested_index() -> None:
     assert finished == ["download"]
 
 
+def test_cancel_from_progress_emits_single_finished_signal() -> None:
+    link = RecordingLink()
+    runner = SequenceRunner(link)
+    groups = [
+        ActionGroup(0, [(0, 1500, 50)]),
+        ActionGroup(1, [(0, 1100, 50)]),
+    ]
+    finished: list[str] = []
+    runner.finished.connect(finished.append)
+    runner.progress.connect(lambda _current, _total: runner.cancel())
+
+    runner.run_online(groups, 0, 1, 1)
+
+    assert link.sent == ["{#000P1500T0050!}"]
+    assert finished == ["cancelled"]
+
+
 def test_cancel_stops_an_active_download() -> None:
     link = RecordingLink()
     runner = SequenceRunner(link)

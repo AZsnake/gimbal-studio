@@ -121,6 +121,8 @@ class SequenceRunner(QObject):
 
         self._sent_count += 1
         self.progress.emit(self._sent_count, self._sent_count + len(self._pending))
+        if self._mode is None:
+            return
         if not self._pending:
             mode = self._mode
             self._stop_session()
