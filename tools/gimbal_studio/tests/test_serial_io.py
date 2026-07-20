@@ -38,6 +38,25 @@ class FakeSerial:
             self._read_buf += data.encode("ascii", errors="ignore")
 
 
+class BlockingFakeSerial(FakeSerial):
+    def __init__(self):
+        super().__init__()
+        self.read_started = threading.Event()
+        self.release_read = threading.Event()
+        self.second_read_started = threading.Event()
+        self.read_calls = 0
+
+    def read(self, n: int = 1) -> bytes:
+        self.read_calls += 1
+        if self.read_calls == 1:
+            self.read_started.set()
+            self.release_read.wait()
+        else:
+            self.second_read_started.set()
+            time.sleep(0.01)
+        return b""
+
+
 def test_send_and_receive():
     link = SerialLink()
     fake = FakeSerial()
@@ -89,6 +108,25 @@ def test_connection_changes_are_emitted():
     link.disconnect()
 
     assert states == [True, False]
+
+
+def test_reconnect_does_not_revive_timed_out_reader():
+    link = SerialLink()
+    first = BlockingFakeSerial()
+    second = FakeSerial()
+
+    try:
+        link.attach_for_test(first)
+        assert first.read_started.wait(timeout=1)
+
+        link.attach_for_test(second)
+        first.release_read.set()
+
+        assert not first.second_read_started.wait(timeout=0.1)
+        assert first.read_calls == 1
+    finally:
+        first.release_read.set()
+        link.disconnect()
 
 
 def test_connect_wraps_open_failures(monkeypatch):

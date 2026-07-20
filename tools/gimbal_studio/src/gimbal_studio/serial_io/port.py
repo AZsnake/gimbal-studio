@@ -26,7 +26,7 @@ class SerialLink(QObject):
         super().__init__(parent)
         self._serial: Any | None = None
         self._reader: threading.Thread | None = None
-        self._stop_reader = threading.Event()
+        self._reader_stop: threading.Event | None = None
         self._state_lock = threading.Lock()
         self._write_lock = threading.Lock()
 
@@ -56,9 +56,12 @@ class SerialLink(QObject):
         with self._state_lock:
             connection = self._serial
             reader = self._reader
+            reader_stop = self._reader_stop
             self._serial = None
             self._reader = None
-            self._stop_reader.set()
+            self._reader_stop = None
+            if reader_stop is not None:
+                reader_stop.set()
 
         if connection is None:
             return
@@ -91,12 +94,13 @@ class SerialLink(QObject):
         if not bool(connection.is_open):
             raise SerialLinkError("Serial port is not open")
 
+        reader_stop = threading.Event()
         with self._state_lock:
             self._serial = connection
-            self._stop_reader.clear()
+            self._reader_stop = reader_stop
             self._reader = threading.Thread(
                 target=self._read_loop,
-                args=(connection,),
+                args=(connection, reader_stop),
                 name="SerialLinkReader",
                 daemon=True,
             )
@@ -105,26 +109,34 @@ class SerialLink(QObject):
         reader.start()
         self.connection_changed.emit(True)
 
-    def _read_loop(self, connection: Any) -> None:
-        while not self._stop_reader.is_set():
+    def _read_loop(
+        self, connection: Any, reader_stop: threading.Event
+    ) -> None:
+        while not reader_stop.is_set():
             try:
                 data = connection.read(1024)
             except (OSError, serial.SerialException) as exc:
-                if not self._stop_reader.is_set():
+                if not reader_stop.is_set():
                     self.error_occurred.emit(str(exc))
-                    self._disconnect_from_reader(connection)
+                    self._disconnect_from_reader(connection, reader_stop)
                 return
 
             if data:
                 self.received.emit(data.decode("utf-8", errors="replace"))
 
-    def _disconnect_from_reader(self, connection: Any) -> None:
+    def _disconnect_from_reader(
+        self, connection: Any, reader_stop: threading.Event
+    ) -> None:
+        reader_stop.set()
         with self._state_lock:
-            if self._serial is not connection:
+            if (
+                self._serial is not connection
+                or self._reader_stop is not reader_stop
+            ):
                 return
             self._serial = None
             self._reader = None
-            self._stop_reader.set()
+            self._reader_stop = None
 
         try:
             connection.close()
