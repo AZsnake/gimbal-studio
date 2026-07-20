@@ -1,4 +1,4 @@
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QObject, QPoint, Qt, Signal
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -10,13 +10,20 @@ from gimbal_studio.ui.pad_widget import PadWidget
 APP = QApplication.instance() or QApplication([])
 
 
-class FakeSerialLink:
+class FakeSerialLink(QObject):
+    connection_changed = Signal(bool)
+
     def __init__(self, connected: bool = False) -> None:
+        super().__init__()
         self.is_connected = connected
         self.sent: list[str] = []
 
     def send_text(self, command: str) -> None:
         self.sent.append(command)
+
+    def set_connected(self, connected: bool) -> None:
+        self.is_connected = connected
+        self.connection_changed.emit(connected)
 
 
 def make_project() -> Project:
@@ -78,7 +85,7 @@ def test_control_changes_emit_pose_and_send_only_while_connected() -> None:
     link.is_connected = True
     page.spin_boxes[0].setValue(1700)
     page.spin_boxes[0].setValue(1710)
-    QTest.qWait(35)
+    QTest.qWait(50)
 
     assert link.sent == ["#000P1710T1000!"]
 
@@ -101,3 +108,58 @@ def test_pad_center_stop_and_arrow_keys_control_pose() -> None:
 
     page.stop_button.click()
     assert link.sent[-1] == "$DST!"
+
+
+def test_emergency_stop_cancels_pending_moves() -> None:
+    link = FakeSerialLink(connected=True)
+    page = ControlPage(link)
+    page.set_project(make_project())
+
+    page.spin_boxes[0].setValue(1600)
+    page.emergency_stop()
+    QTest.qWait(40)
+
+    assert link.sent == ["$DST!"]
+
+
+def test_arrow_keys_control_pad_while_channel_widgets_have_focus() -> None:
+    link = FakeSerialLink()
+    page = ControlPage(link)
+    page.set_project(make_project())
+    page.show()
+    page.activateWindow()
+    assert QTest.qWaitForWindowActive(page)
+
+    page.spin_boxes[0].setFocus()
+    QTest.keyClick(page.spin_boxes[0], Qt.Key.Key_Right)
+    assert page.current_pose() == {0: 1510, 1: 1500}
+
+    page.sliders[1].setFocus()
+    QTest.keyClick(page.sliders[1], Qt.Key.Key_Up)
+    assert page.current_pose() == {0: 1510, 1: 1510}
+    page.close()
+
+
+def test_offline_edit_is_not_sent_after_quick_reconnect() -> None:
+    link = FakeSerialLink()
+    page = ControlPage(link)
+    page.set_project(make_project())
+
+    page.spin_boxes[0].setValue(1600)
+    link.set_connected(True)
+    QTest.qWait(40)
+
+    assert link.sent == []
+
+
+def test_disconnect_drops_moves_queued_while_connected() -> None:
+    link = FakeSerialLink(connected=True)
+    page = ControlPage(link)
+    page.set_project(make_project())
+
+    page.spin_boxes[0].setValue(1600)
+    link.set_connected(False)
+    link.set_connected(True)
+    QTest.qWait(40)
+
+    assert link.sent == []

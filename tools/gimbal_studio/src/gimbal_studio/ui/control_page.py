@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -42,8 +43,12 @@ class ControlPage(QWidget):
         self._send_timer.setSingleShot(True)
         self._send_timer.setInterval(30)
         self._send_timer.timeout.connect(self._flush_pending_moves)
+        self.serial_link.connection_changed.connect(self._on_connection_changed)
 
         self._build_ui()
+        application = QApplication.instance()
+        if application is not None:
+            application.installEventFilter(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def _build_ui(self) -> None:
@@ -89,6 +94,32 @@ class ControlPage(QWidget):
 
         layout.addWidget(pad_panel, 3)
         layout.addWidget(controls_panel, 2)
+
+    def _adjust_channel(self, channel_index: int, delta: int) -> None:
+        if len(self.channels) <= channel_index:
+            return
+        channel_id = self.channels[channel_index].id
+        self._on_channel_changed(
+            channel_id,
+            self.spin_boxes[channel_id].value() + delta,
+        )
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.KeyPress and (
+            watched is self or self.isAncestorOf(watched)
+        ):
+            key_map = {
+                Qt.Key.Key_Left: (0, -10),
+                Qt.Key.Key_Right: (0, 10),
+                Qt.Key.Key_Down: (1, -10),
+                Qt.Key.Key_Up: (1, 10),
+            }
+            adjustment = key_map.get(event.key())
+            if adjustment is not None and len(self.channels) > adjustment[0]:
+                self._adjust_channel(*adjustment)
+                event.accept()
+                return True
+        return super().eventFilter(watched, event)
 
     def set_project(self, project: Project) -> None:
         self.project = project
@@ -182,10 +213,16 @@ class ControlPage(QWidget):
         self._set_channel_widgets(channel_id, value)
         self._sync_pad()
         self.pose_changed.emit(self.current_pose())
-        if not self._applying_pose:
+        if not self._applying_pose and self.serial_link.is_connected:
             self._pending_moves[channel_id] = value
             if not self._send_timer.isActive():
                 self._send_timer.start()
+
+    def _on_connection_changed(self, connected: bool) -> None:
+        if connected:
+            return
+        self._send_timer.stop()
+        self._pending_moves.clear()
 
     def _on_pad_changed(self, x: float, y: float) -> None:
         if len(self.channels) < 2:
@@ -216,6 +253,8 @@ class ControlPage(QWidget):
             self._on_channel_changed(channel.id, value)
 
     def emergency_stop(self) -> None:
+        self._send_timer.stop()
+        self._pending_moves.clear()
         if not self.serial_link.is_connected:
             return
         try:
