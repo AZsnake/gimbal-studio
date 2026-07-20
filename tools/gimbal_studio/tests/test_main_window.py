@@ -64,6 +64,8 @@ def test_main_window_builds_shell_and_wires_serial(monkeypatch):
         for index in range(window.port_combo.count())
     ] == ["COM3", "COM7"]
     assert window.baud_combo.currentText() == "115200"
+    assert window.tabs.widget(0) is window.control_page
+    assert window.control_page.current_pose() == {0: 1500, 1: 1500}
 
     window.log_page.command_input.setText("PING")
     window.log_page.send_button.click()

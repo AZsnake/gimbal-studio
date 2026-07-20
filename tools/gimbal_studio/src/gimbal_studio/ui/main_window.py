@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gimbal_studio.project.models import Project, SteerChannel
 from gimbal_studio.serial_io.port import SerialLink, SerialLinkError, list_ports
+from gimbal_studio.ui.control_page import ControlPage
 from gimbal_studio.ui.log_page import LogPage
 
 
@@ -65,12 +67,23 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self.status_dot)
 
         self.tabs = QTabWidget()
-        control_placeholder = QLabel("控制页面将在 Task 7 实现")
-        control_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.control_page = ControlPage(self.serial_link)
+        self.control_page.set_project(
+            Project(
+                steers=[
+                    SteerChannel(
+                        title="水平", id=0, pmin=500, pmax=2500, enable=True
+                    ),
+                    SteerChannel(
+                        title="倾斜", id=1, pmin=500, pmax=2500, enable=True
+                    ),
+                ]
+            )
+        )
         groups_placeholder = QLabel("动作组页面将在 Task 8 实现")
         groups_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.log_page = LogPage()
-        self.tabs.addTab(control_placeholder, "控制")
+        self.tabs.addTab(self.control_page, "控制")
         self.tabs.addTab(groups_placeholder, "动作组")
         self.tabs.addTab(self.log_page, "串口日志")
 
