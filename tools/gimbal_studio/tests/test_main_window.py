@@ -1,4 +1,4 @@
-from pathlib import Path
+from importlib.resources import files
 
 from PySide6.QtWidgets import QApplication
 
@@ -6,16 +6,18 @@ from PySide6.QtWidgets import QApplication
 APP = QApplication.instance() or QApplication([])
 
 
-def test_theme_uses_graphite_amber_palette():
-    theme_path = (
-        Path(__file__).parents[1]
-        / "src"
-        / "gimbal_studio"
-        / "resources"
-        / "theme.qss"
-    )
+def test_theme_qss_is_package_resource():
+    from gimbal_studio.app import load_theme
 
-    theme = theme_path.read_text(encoding="utf-8")
+    theme_path = files("gimbal_studio") / "resources" / "theme.qss"
+    assert theme_path.is_file()
+    assert load_theme() == theme_path.read_text(encoding="utf-8")
+
+
+def test_theme_uses_graphite_amber_palette():
+    from gimbal_studio.app import load_theme
+
+    theme = load_theme()
 
     assert "#141414" in theme
     assert "#1e1e1e" in theme
@@ -75,5 +77,26 @@ def test_main_window_builds_shell_and_wires_serial(monkeypatch):
     window.serial_link.connection_changed.emit(True)
     assert window.connect_button.text() == "断开"
     assert window.status_dot.property("connected") is True
+
+    window.close()
+
+
+def test_send_failure_logs_error_once(monkeypatch):
+    import gimbal_studio.ui.main_window as main_window_module
+
+    monkeypatch.setattr(main_window_module, "list_ports", lambda: ["COM3"])
+    window = main_window_module.MainWindow()
+
+    def failing_send(_command: str) -> None:
+        window.serial_link.error_occurred.emit("write failed")
+        raise main_window_module.SerialLinkError("write failed")
+
+    window.serial_link.send_text = failing_send
+    window.log_page.command_input.setText("PING")
+    window.log_page.send_button.click()
+
+    log_text = window.log_page.log_output.toPlainText()
+    assert log_text.count("write failed") == 1
+    assert "TX  PING" not in log_text
 
     window.close()

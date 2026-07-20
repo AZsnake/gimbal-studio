@@ -112,8 +112,7 @@ class MainWindow(QMainWindow):
     def _send_command(self, command: str) -> None:
         try:
             self.serial_link.send_text(command)
-        except SerialLinkError as exc:
-            self.log_page.append_error(str(exc))
+        except SerialLinkError:
             return
         self.log_page.append_sent(command)
 
