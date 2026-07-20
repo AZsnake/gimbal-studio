@@ -115,6 +115,45 @@ def test_cancel_from_progress_emits_single_finished_signal() -> None:
     assert finished == ["cancelled"]
 
 
+def test_cancelled_progress_callback_does_not_mutate_replacement_session() -> None:
+    link = RecordingLink()
+    runner = SequenceRunner(link)
+    initial_groups = [
+        ActionGroup(0, [(0, 1500, 50)]),
+        ActionGroup(1, [(0, 1400, 50)]),
+    ]
+    replacement_groups = [
+        ActionGroup(2, [(0, 1300, 50)]),
+        ActionGroup(3, [(0, 1200, 50)]),
+    ]
+    finished: list[str] = []
+    cancelled = False
+
+    def cancel_initial_session(_current: int, _total: int) -> None:
+        nonlocal cancelled
+        if not cancelled:
+            cancelled = True
+            runner.cancel()
+
+    def start_replacement(mode: str) -> None:
+        finished.append(mode)
+        if mode == "cancelled":
+            runner.download(replacement_groups, 0, inter_frame_ms=1000)
+
+    runner.progress.connect(cancel_initial_session)
+    runner.finished.connect(start_replacement)
+
+    runner.run_online(initial_groups, 0, 1, 1)
+
+    assert runner._timer.interval() == 1000
+    wait_until(lambda: finished == ["cancelled", "download"], timeout=1.5)
+    assert link.sent == [
+        "{#000P1500T0050!}",
+        "{#000P1300T0050!}",
+        "{#000P1200T0050!}",
+    ]
+
+
 def test_cancel_stops_an_active_download() -> None:
     link = RecordingLink()
     runner = SequenceRunner(link)

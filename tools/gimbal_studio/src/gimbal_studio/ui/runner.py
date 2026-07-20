@@ -26,6 +26,7 @@ class SequenceRunner(QObject):
         self._pending: list[tuple[str, int]] = []
         self._sent_count = 0
         self._mode: str | None = None
+        self._session_id = 0
 
     def run_online(
         self,
@@ -58,6 +59,8 @@ class SequenceRunner(QObject):
             for _ in range(count)
             for group in selected
         ]
+        self._session_id += 1
+        session_id = self._session_id
         self._stop_session()
         total = len(commands)
         for current, command in enumerate(commands, start=1):
@@ -67,6 +70,8 @@ class SequenceRunner(QObject):
                 self.failed.emit(str(exc))
                 return
             self.progress.emit(current, total)
+            if session_id != self._session_id:
+                return
         self.finished.emit("online")
 
     def download(
@@ -83,6 +88,7 @@ class SequenceRunner(QObject):
         self._start_session("download", frames)
 
     def cancel(self) -> None:
+        self._session_id += 1
         if self._mode is None:
             return
         self._stop_session()
@@ -97,6 +103,7 @@ class SequenceRunner(QObject):
         mode: str,
         frames: Sequence[tuple[str, int]],
     ) -> None:
+        self._session_id += 1
         self._stop_session()
         self._mode = mode
         self._pending = list(frames)
@@ -108,6 +115,7 @@ class SequenceRunner(QObject):
         self._send_next()
 
     def _send_next(self) -> None:
+        session_id = self._session_id
         if self._mode is None or not self._pending:
             return
 
@@ -121,7 +129,7 @@ class SequenceRunner(QObject):
 
         self._sent_count += 1
         self.progress.emit(self._sent_count, self._sent_count + len(self._pending))
-        if self._mode is None:
+        if session_id != self._session_id:
             return
         if not self._pending:
             mode = self._mode
