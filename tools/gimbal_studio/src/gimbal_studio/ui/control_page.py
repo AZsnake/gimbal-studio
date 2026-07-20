@@ -4,7 +4,6 @@ from collections.abc import Iterable, Mapping
 
 from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QApplication,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -46,10 +45,12 @@ class ControlPage(QWidget):
         self.serial_link.connection_changed.connect(self._on_connection_changed)
 
         self._build_ui()
-        application = QApplication.instance()
-        if application is not None:
-            application.installEventFilter(self)
+        self._install_key_filters()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def _install_key_filters(self) -> None:
+        for child in self.findChildren(QWidget):
+            child.installEventFilter(self)
 
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
@@ -105,9 +106,7 @@ class ControlPage(QWidget):
         )
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.KeyPress and (
-            watched is self or self.isAncestorOf(watched)
-        ):
+        if event.type() == QEvent.Type.KeyPress:
             key_map = {
                 Qt.Key.Key_Left: (0, -10),
                 Qt.Key.Key_Right: (0, 10),
@@ -136,6 +135,8 @@ class ControlPage(QWidget):
             spin_box = QSpinBox()
             spin_box.setRange(minimum, maximum)
             spin_box.setValue(slider.value())
+            slider.installEventFilter(self)
+            spin_box.installEventFilter(self)
 
             slider.valueChanged.connect(
                 lambda value, channel_id=channel.id: self._on_channel_changed(

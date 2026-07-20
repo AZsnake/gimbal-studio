@@ -1,4 +1,7 @@
-from PySide6.QtCore import QObject, QPoint, Qt, Signal
+from collections.abc import Callable, Iterator
+
+import pytest
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, Qt, Signal
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -24,6 +27,24 @@ class FakeSerialLink(QObject):
     def set_connected(self, connected: bool) -> None:
         self.is_connected = connected
         self.connection_changed.emit(connected)
+
+
+@pytest.fixture
+def control_page_factory() -> Iterator[Callable[[FakeSerialLink], ControlPage]]:
+    pages: list[ControlPage] = []
+
+    def create(link: FakeSerialLink) -> ControlPage:
+        page = ControlPage(link)
+        pages.append(page)
+        return page
+
+    yield create
+
+    for page in pages:
+        page.close()
+        page.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    APP.processEvents()
 
 
 def make_project() -> Project:
@@ -53,9 +74,11 @@ def test_pad_emits_normalized_position() -> None:
     assert abs(values[-1][1]) < 0.05
 
 
-def test_control_page_builds_enabled_channels_and_applies_pose() -> None:
+def test_control_page_builds_enabled_channels_and_applies_pose(
+    control_page_factory,
+) -> None:
     link = FakeSerialLink()
-    page = ControlPage(link)
+    page = control_page_factory(link)
     changed: list[dict[int, int]] = []
     page.pose_changed.connect(changed.append)
 
@@ -70,9 +93,11 @@ def test_control_page_builds_enabled_channels_and_applies_pose() -> None:
     assert link.sent == []
 
 
-def test_control_changes_emit_pose_and_send_only_while_connected() -> None:
+def test_control_changes_emit_pose_and_send_only_while_connected(
+    control_page_factory,
+) -> None:
     link = FakeSerialLink()
-    page = ControlPage(link)
+    page = control_page_factory(link)
     page.set_project(make_project())
     changed: list[dict[int, int]] = []
     page.pose_changed.connect(changed.append)
@@ -90,9 +115,9 @@ def test_control_changes_emit_pose_and_send_only_while_connected() -> None:
     assert link.sent == ["#000P1710T1000!"]
 
 
-def test_pad_center_stop_and_arrow_keys_control_pose() -> None:
+def test_pad_center_stop_and_arrow_keys_control_pose(control_page_factory) -> None:
     link = FakeSerialLink(connected=True)
-    page = ControlPage(link)
+    page = control_page_factory(link)
     page.set_project(make_project())
 
     page.pad.value_changed.emit(1.0, -1.0)
@@ -110,9 +135,9 @@ def test_pad_center_stop_and_arrow_keys_control_pose() -> None:
     assert link.sent[-1] == "$DST!"
 
 
-def test_emergency_stop_cancels_pending_moves() -> None:
+def test_emergency_stop_cancels_pending_moves(control_page_factory) -> None:
     link = FakeSerialLink(connected=True)
-    page = ControlPage(link)
+    page = control_page_factory(link)
     page.set_project(make_project())
 
     page.spin_boxes[0].setValue(1600)
@@ -122,9 +147,11 @@ def test_emergency_stop_cancels_pending_moves() -> None:
     assert link.sent == ["$DST!"]
 
 
-def test_arrow_keys_control_pad_while_channel_widgets_have_focus() -> None:
+def test_arrow_keys_control_pad_while_channel_widgets_have_focus(
+    control_page_factory,
+) -> None:
     link = FakeSerialLink()
-    page = ControlPage(link)
+    page = control_page_factory(link)
     page.set_project(make_project())
     page.show()
     page.activateWindow()
@@ -137,12 +164,11 @@ def test_arrow_keys_control_pad_while_channel_widgets_have_focus() -> None:
     page.sliders[1].setFocus()
     QTest.keyClick(page.sliders[1], Qt.Key.Key_Up)
     assert page.current_pose() == {0: 1510, 1: 1510}
-    page.close()
 
 
-def test_offline_edit_is_not_sent_after_quick_reconnect() -> None:
+def test_offline_edit_is_not_sent_after_quick_reconnect(control_page_factory) -> None:
     link = FakeSerialLink()
-    page = ControlPage(link)
+    page = control_page_factory(link)
     page.set_project(make_project())
 
     page.spin_boxes[0].setValue(1600)
@@ -152,9 +178,9 @@ def test_offline_edit_is_not_sent_after_quick_reconnect() -> None:
     assert link.sent == []
 
 
-def test_disconnect_drops_moves_queued_while_connected() -> None:
+def test_disconnect_drops_moves_queued_while_connected(control_page_factory) -> None:
     link = FakeSerialLink(connected=True)
-    page = ControlPage(link)
+    page = control_page_factory(link)
     page.set_project(make_project())
 
     page.spin_boxes[0].setValue(1600)
@@ -163,3 +189,19 @@ def test_disconnect_drops_moves_queued_while_connected() -> None:
     QTest.qWait(40)
 
     assert link.sent == []
+
+
+def test_control_page_does_not_install_application_event_filter(
+    control_page_factory, monkeypatch
+) -> None:
+    installed_filters: list[QObject] = []
+    original_install = QApplication.installEventFilter
+
+    def record_install(application, event_filter) -> None:
+        installed_filters.append(event_filter)
+        original_install(application, event_filter)
+
+    monkeypatch.setattr(QApplication, "installEventFilter", record_install)
+    page = control_page_factory(FakeSerialLink())
+
+    assert page not in installed_filters
