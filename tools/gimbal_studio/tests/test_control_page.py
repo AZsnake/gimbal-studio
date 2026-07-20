@@ -93,6 +93,29 @@ def test_control_page_builds_enabled_channels_and_applies_pose(
     assert link.sent == []
 
 
+def test_control_page_clamps_channel_limits_to_safe_pwm_range(
+    control_page_factory,
+) -> None:
+    page = control_page_factory(FakeSerialLink())
+    page.set_project(
+        Project(
+            steers=[
+                SteerChannel(
+                    title="超范围",
+                    id=0,
+                    pmin=100,
+                    pmax=4000,
+                    enable=True,
+                )
+            ]
+        )
+    )
+
+    assert (page.sliders[0].minimum(), page.sliders[0].maximum()) == (500, 2500)
+    page.apply_pose({0: 9999})
+    assert page.spin_boxes[0].value() == 2500
+
+
 def test_control_changes_emit_pose_and_send_only_while_connected(
     control_page_factory,
 ) -> None:

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -36,6 +37,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_signals()
         self.refresh_ports()
+        self._set_connected(False)
 
     @staticmethod
     def _default_project() -> Project:
@@ -132,6 +134,12 @@ class MainWindow(QMainWindow):
                 time_ms,
             )
         )
+        self.groups_page.start_spin.valueChanged.connect(
+            lambda: self._update_sequence_actions()
+        )
+        self.groups_page.end_spin.valueChanged.connect(
+            lambda: self._update_sequence_actions()
+        )
         self.serial_link.received.connect(self.log_page.append_received)
         self.serial_link.connection_changed.connect(self._set_connected)
         self.serial_link.error_occurred.connect(self.log_page.append_error)
@@ -146,6 +154,7 @@ class MainWindow(QMainWindow):
             self.control_page.current_pose(),
             self.control_page.time_spin.value(),
         )
+        self._update_sequence_actions()
         self._update_title()
 
     def _update_title(self) -> None:
@@ -214,7 +223,9 @@ class MainWindow(QMainWindow):
             return
         try:
             self.serial_link.connect(port, int(self.baud_combo.currentText()))
-        except SerialLinkError:
+        except SerialLinkError as exc:
+            self._set_connected(False)
+            QMessageBox.critical(self, "连接失败", str(exc))
             return
 
     def _send_command(self, command: str) -> None:
@@ -234,7 +245,24 @@ class MainWindow(QMainWindow):
         self.status_dot.style().unpolish(self.status_dot)
         self.status_dot.style().polish(self.status_dot)
         if not connected:
+            self.groups_page.runner.cancel()
             self.connect_button.setEnabled(bool(self.port_combo.count()))
+        self._update_sequence_actions(connected)
+
+    def _update_sequence_actions(self, connected: bool | None = None) -> None:
+        if connected is None:
+            connected = self.serial_link.is_connected
+        enabled = (
+            connected
+            and bool(self.project.groups)
+            and self.groups_page._is_range_valid()
+        )
+        for button in (
+            self.groups_page.online_button,
+            self.groups_page.offline_button,
+            self.groups_page.download_button,
+        ):
+            button.setEnabled(enabled)
 
     def closeEvent(self, event) -> None:
         self.groups_page.runner.cancel()

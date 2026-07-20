@@ -106,6 +106,59 @@ def test_send_failure_logs_error_once(monkeypatch):
     window.close()
 
 
+def test_connection_state_controls_sequence_actions(monkeypatch):
+    import gimbal_studio.ui.main_window as main_window_module
+    from gimbal_studio.project.models import ActionGroup, Project
+
+    monkeypatch.setattr(main_window_module, "list_ports", lambda: ["COM3"])
+    window = main_window_module.MainWindow()
+    window.set_project(Project(groups=[ActionGroup(0, [(0, 1500, 1000)])]))
+
+    assert not window.groups_page.online_button.isEnabled()
+    assert not window.groups_page.offline_button.isEnabled()
+    assert not window.groups_page.download_button.isEnabled()
+
+    window.serial_link.connection_changed.emit(True)
+    assert window.groups_page.online_button.isEnabled()
+    assert window.groups_page.offline_button.isEnabled()
+    assert window.groups_page.download_button.isEnabled()
+
+    window.serial_link.connection_changed.emit(False)
+    assert window.connect_button.text() == "连接"
+    assert window.status_dot.property("connected") is False
+    assert not window.groups_page.online_button.isEnabled()
+    assert not window.groups_page.offline_button.isEnabled()
+    assert not window.groups_page.download_button.isEnabled()
+
+    window.close()
+
+
+def test_connection_failure_shows_message_box(monkeypatch):
+    import gimbal_studio.ui.main_window as main_window_module
+
+    monkeypatch.setattr(main_window_module, "list_ports", lambda: ["COM3"])
+    messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        main_window_module.QMessageBox,
+        "critical",
+        lambda _parent, title, message: messages.append((title, message)),
+    )
+    window = main_window_module.MainWindow()
+    monkeypatch.setattr(
+        window.serial_link,
+        "connect",
+        lambda _port, _baud: (_ for _ in ()).throw(
+            main_window_module.SerialLinkError("port busy")
+        ),
+    )
+
+    window.connect_button.click()
+
+    assert messages == [("连接失败", "port busy")]
+    assert window.connect_button.text() == "连接"
+    window.close()
+
+
 def test_open_and_save_actions_share_project_between_pages(monkeypatch, tmp_path):
     import gimbal_studio.ui.main_window as main_window_module
 

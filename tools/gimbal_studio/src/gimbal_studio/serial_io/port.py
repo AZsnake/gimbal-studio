@@ -55,6 +55,13 @@ class SerialLink(QObject):
     def disconnect(self) -> None:
         with self._state_lock:
             connection = self._serial
+        if connection is not None:
+            self._disconnect_connection(connection)
+
+    def _disconnect_connection(self, connection: Any) -> None:
+        with self._state_lock:
+            if self._serial is not connection:
+                return
             reader = self._reader
             reader_stop = self._reader_stop
             self._serial = None
@@ -62,9 +69,6 @@ class SerialLink(QObject):
             self._reader_stop = None
             if reader_stop is not None:
                 reader_stop.set()
-
-        if connection is None:
-            return
 
         try:
             connection.close()
@@ -88,6 +92,7 @@ class SerialLink(QObject):
         except (OSError, serial.SerialException) as exc:
             message = str(exc)
             self.error_occurred.emit(message)
+            self._disconnect_connection(connection)
             raise SerialLinkError(message) from exc
 
     def _attach(self, connection: Any) -> None:
@@ -127,19 +132,10 @@ class SerialLink(QObject):
     def _disconnect_from_reader(
         self, connection: Any, reader_stop: threading.Event
     ) -> None:
-        reader_stop.set()
         with self._state_lock:
             if (
                 self._serial is not connection
                 or self._reader_stop is not reader_stop
             ):
                 return
-            self._serial = None
-            self._reader = None
-            self._reader_stop = None
-
-        try:
-            connection.close()
-        except (OSError, serial.SerialException):
-            pass
-        self.connection_changed.emit(False)
+        self._disconnect_connection(connection)

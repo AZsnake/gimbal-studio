@@ -20,6 +20,9 @@ from gimbal_studio.protocol.commands import build_move, build_stop
 from gimbal_studio.serial_io.port import SerialLink, SerialLinkError
 from gimbal_studio.ui.pad_widget import PadWidget
 
+_MIN_PWM = 500
+_MAX_PWM = 2500
+
 
 class ControlPage(QWidget):
     pose_changed = Signal(object)
@@ -129,6 +132,8 @@ class ControlPage(QWidget):
 
         for channel in self.channels:
             minimum, maximum = sorted((channel.pmin, channel.pmax))
+            minimum = max(_MIN_PWM, min(_MAX_PWM, minimum))
+            maximum = max(_MIN_PWM, min(_MAX_PWM, maximum))
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(minimum, maximum)
             slider.setValue(max(minimum, min(maximum, 1500)))

@@ -57,6 +57,11 @@ class BlockingFakeSerial(FakeSerial):
         return b""
 
 
+class WriteFailingFakeSerial(FakeSerial):
+    def write(self, data: bytes):
+        raise OSError("device disconnected")
+
+
 def test_send_and_receive():
     link = SerialLink()
     fake = FakeSerial()
@@ -84,6 +89,19 @@ def test_send_when_disconnected_raises():
 
     with pytest.raises(SerialLinkError):
         link.send_text("x")
+
+
+def test_write_failure_disconnects_link_and_emits_state():
+    link = SerialLink()
+    states = []
+    link.connection_changed.connect(states.append)
+    link.attach_for_test(WriteFailingFakeSerial())
+
+    with pytest.raises(SerialLinkError, match="device disconnected"):
+        link.send_text("x")
+
+    assert not link.is_connected
+    assert states == [True, False]
 
 
 def test_list_ports_returns_device_names(monkeypatch):
