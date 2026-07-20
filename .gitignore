@@ -2,3 +2,5 @@
 .agents
 skills-lock.json
 .superpowers/
+
+.worktrees/
