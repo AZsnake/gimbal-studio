@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -19,6 +20,8 @@ from gimbal_studio.project.ini_io import group_command
 from gimbal_studio.project.models import ActionGroup, Project
 from gimbal_studio.protocol.commands import build_clear_boot, build_set_boot
 from gimbal_studio.ui.runner import SequenceRunner, TextLink
+
+_DEFAULT_INTER_FRAME_MS = 300
 
 
 class GroupsPage(QWidget):
@@ -112,6 +115,8 @@ class GroupsPage(QWidget):
         self.set_boot_button.clicked.connect(self._set_boot)
         self.clear_boot_button.clicked.connect(self._clear_boot)
         self.cancel_button.clicked.connect(self.runner.cancel)
+        self.start_spin.valueChanged.connect(self._update_run_buttons)
+        self.end_spin.valueChanged.connect(self._update_run_buttons)
         self.runner.progress.connect(
             lambda current, total: self.status_label.setText(f"{current}/{total}")
         )
@@ -141,14 +146,7 @@ class GroupsPage(QWidget):
         self.start_spin.setRange(0, maximum)
         self.end_spin.setRange(0, maximum)
         self.end_spin.setValue(maximum)
-        enabled = bool(self.project.groups)
-        for button in (
-            self.online_button,
-            self.offline_button,
-            self.download_button,
-            self.set_boot_button,
-        ):
-            button.setEnabled(enabled)
+        self._update_run_buttons()
 
     def _selected_row(self) -> int | None:
         row = self.table.currentRow()
@@ -216,17 +214,55 @@ class GroupsPage(QWidget):
     def _range(self) -> tuple[int, int, int]:
         return self.start_spin.value(), self.end_spin.value(), self.count_spin.value()
 
+    def _is_range_valid(self) -> bool:
+        return self.start_spin.value() <= self.end_spin.value()
+
+    def _update_run_buttons(self) -> None:
+        enabled = bool(self.project.groups) and self._is_range_valid()
+        for button in (
+            self.online_button,
+            self.offline_button,
+            self.download_button,
+            self.set_boot_button,
+        ):
+            button.setEnabled(enabled)
+
+    def _ensure_valid_range(self) -> bool:
+        if self._is_range_valid():
+            return True
+        QMessageBox.warning(self, "范围无效", "起始组号不能大于结束组号。")
+        return False
+
+    def _inter_frame_ms(self) -> int:
+        raw = self.project.meta.get("timeDownload", _DEFAULT_INTER_FRAME_MS)
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return _DEFAULT_INTER_FRAME_MS
+
     def _run_online(self) -> None:
+        if not self._ensure_valid_range():
+            return
         start, end, count = self._range()
         self.runner.run_online(self.project.groups, start, end, count)
 
     def _run_offline(self) -> None:
+        if not self._ensure_valid_range():
+            return
         self.runner.run_offline(*self._range())
 
     def _download(self) -> None:
-        self.runner.download(self.project.groups, self.start_spin.value())
+        if not self._ensure_valid_range():
+            return
+        self.runner.download(
+            self.project.groups,
+            self.start_spin.value(),
+            inter_frame_ms=self._inter_frame_ms(),
+        )
 
     def _set_boot(self) -> None:
+        if not self._ensure_valid_range():
+            return
         try:
             self.link.send_text(build_set_boot(*self._range()))
         except Exception as exc:

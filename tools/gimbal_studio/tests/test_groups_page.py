@@ -100,7 +100,9 @@ def test_sequence_and_boot_buttons_dispatch_expected_commands(
     monkeypatch.setattr(
         page.runner,
         "download",
-        lambda groups, start: calls.append(("download", groups, start)),
+        lambda groups, start, inter_frame_ms=300: calls.append(
+            ("download", groups, start, inter_frame_ms)
+        ),
     )
     monkeypatch.setattr(page.runner, "cancel", lambda: calls.append(("cancel",)))
     page.start_spin.setValue(0)
@@ -117,7 +119,80 @@ def test_sequence_and_boot_buttons_dispatch_expected_commands(
     assert calls == [
         ("online", project.groups, 0, 1, 3),
         ("offline", 0, 1, 3),
-        ("download", project.groups, 0),
+        ("download", project.groups, 0, 300),
         ("cancel",),
     ]
     assert link.sent == ["$PTL:0-1,3!", "$PTC!"]
+
+
+def test_invalid_range_blocks_sequence_and_boot_actions(
+    groups_page, monkeypatch
+) -> None:
+    page, link = groups_page
+    project = make_project()
+    page.set_project(project)
+    page.start_spin.setValue(1)
+    page.end_spin.setValue(0)
+    calls: list[tuple] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        page.runner,
+        "run_online",
+        lambda groups, start, end, count: calls.append(
+            ("online", groups, start, end, count)
+        ),
+    )
+    monkeypatch.setattr(
+        page.runner,
+        "run_offline",
+        lambda start, end, count: calls.append(("offline", start, end, count)),
+    )
+    monkeypatch.setattr(
+        page.runner,
+        "download",
+        lambda groups, start, inter_frame_ms=300: calls.append(
+            ("download", groups, start, inter_frame_ms)
+        ),
+    )
+    monkeypatch.setattr(
+        "gimbal_studio.ui.groups_page.QMessageBox.warning",
+        lambda _parent, _title, message: warnings.append(message),
+    )
+
+    assert not page.online_button.isEnabled()
+    assert not page.offline_button.isEnabled()
+    assert not page.download_button.isEnabled()
+    assert not page.set_boot_button.isEnabled()
+
+    page._run_online()
+    page._run_offline()
+    page._download()
+    page._set_boot()
+
+    assert calls == []
+    assert link.sent == []
+    assert len(warnings) == 4
+    assert all(message == "起始组号不能大于结束组号。" for message in warnings)
+
+
+def test_download_uses_time_download_from_project_meta(
+    groups_page, monkeypatch
+) -> None:
+    page, _link = groups_page
+    project = make_project()
+    project.meta["timeDownload"] = 500
+    page.set_project(project)
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        page.runner,
+        "download",
+        lambda groups, start, inter_frame_ms=300: calls.append(
+            ("download", groups, start, inter_frame_ms)
+        ),
+    )
+    page.start_spin.setValue(0)
+    page.end_spin.setValue(1)
+
+    page.download_button.click()
+
+    assert calls == [("download", project.groups, 0, 500)]
