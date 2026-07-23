@@ -1,6 +1,68 @@
-# AI related files
-.agents
-skills-lock.json
-.superpowers/
+# =============================================================================
+# Gimbal Studio — track source; ignore generated, local secrets, licensed docs
+# =============================================================================
 
+# --- AI / IDE (local) ---
+.agents/
+.cursor/
+.claude/
+.codex/
+.continue/
+.aider*
+.windsurf/
+.superpowers/
+skills-lock.json
 .worktrees/
+*.plan.md
+.vscode/
+.idea/
+
+# --- Secrets / credentials ---
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*~
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.venv/
+.venv*/
+venv/
+build/
+dist/
+*.spec.bak
+gimbal_studio/GimbalStudio.spec
+
+# --- App local cache / runtime ---
+gimbal_studio/.cache/
+gimbal_studio/config.ini
+
+# --- Licensed / confidential documentation ---
+docs/路舵机控制器资料
+docs/schematics/
+docs/specs/
+
+# --- Scratch ---
+ref/
+
+# --- Debug / temp ---
+debug-*.log
+*.log
+!.gitkeep
