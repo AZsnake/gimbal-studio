@@ -66,3 +66,6 @@ ref/
 debug-*.log
 *.log
 !.gitkeep
+
+# --- Local release staging ---
+dist/release/
